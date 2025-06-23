@@ -1,5 +1,5 @@
 <?php
-include 'dbaing.php';
+include 'dbkoneksi.php';
 
 // Konfigurasi XMPP (Ganti dengan detail Anda) 
 define('XMPP_HOST', 'your_xmpp_server_host');
