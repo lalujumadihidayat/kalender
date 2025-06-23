@@ -1,7 +1,7 @@
 <?php
-include 'dbkoneksi.php';
+include 'dbaing.php';
 
-// Konfigurasi XMPP (Ganti dengan detail Anda)
+// Konfigurasi XMPP (Ganti dengan detail Anda) 
 define('XMPP_HOST', 'your_xmpp_server_host');
 define('XMPP_PORT', 5222);
 define('XMPP_USER', 'your_bot_username');
