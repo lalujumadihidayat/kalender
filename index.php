@@ -1,6 +1,8 @@
 <?php
+// index.php
 ob_start();
 session_start();
+// File ini hanya untuk tampilan, jadi tidak perlu ada koneksi database di sini.
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -10,6 +12,7 @@ session_start();
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calendar Pengingat</title>
     <style>
+    /* Semua kode CSS Anda tetap di sini, tidak ada perubahan */
     :root {
         --bg-color: #f3f4f6;
         --text-color: #374151;
@@ -63,6 +66,57 @@ session_start();
         line-height: 1.6;
         transition: background-color 0.3s, color 0.3s;
     }
+
+    /* CSS untuk Modal Alarm */
+    #alarm-modal {
+        display: none;
+        /* Sembunyikan secara default */
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0, 0, 0, 0.5);
+        /* Latar belakang semi-transparan */
+        justify-content: center;
+        align-items: center;
+    }
+
+    #alarm-modal-content {
+        background-color: var(--card-bg);
+        color: var(--text-color);
+        margin: auto;
+        padding: 2rem;
+        border: 1px solid var(--border-color);
+        width: 90%;
+        max-width: 400px;
+        border-radius: 0.5rem;
+        text-align: center;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    #alarm-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+    }
+
+    #alarm-text {
+        font-size: 1.1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    #stop-alarm-btn {
+        background-color: var(--danger-color);
+        color: white;
+    }
+
+    #stop-alarm-btn:hover {
+        background-color: var(--danger-hover-color);
+    }
+
 
     .container {
         max-width: 1200px;
@@ -241,6 +295,25 @@ session_start();
         transition: border-color 0.2s;
     }
 
+    .form-input[type="file"] {
+        padding: 0.35rem 0.75rem;
+    }
+
+    .form-input[type="file"]::file-selector-button {
+        margin-right: 0.5rem;
+        border: none;
+        background: var(--primary-color);
+        padding: 0.3rem 0.6rem;
+        border-radius: 0.25rem;
+        color: white;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .form-input[type="file"]::file-selector-button:hover {
+        background: var(--primary-hover-color);
+    }
+
     .form-input:focus {
         outline: none;
         border-color: var(--input-focus-border);
@@ -368,6 +441,19 @@ session_start();
 </head>
 
 <body>
+    <!-- Tambahkan atribut 'loop' agar suara berulang -->
+    <audio id="alarm-sound" src="ayam.mp3" preload="auto" loop></audio>
+
+    <!-- Modal untuk menampilkan notifikasi alarm -->
+    <div id="alarm-modal">
+        <div id="alarm-modal-content">
+            <h2 id="alarm-title">Waktunya Pengingat!</h2>
+            <p id="alarm-text"></p>
+            <button id="stop-alarm-btn" class="btn">Stop Alarm</button>
+        </div>
+    </div>
+
+
     <div class="container">
         <div class="header">
             <h1>Calendar Pengingat</h1>
@@ -420,9 +506,13 @@ session_start();
                         <div class="form-group"><label class="form-label" for="description">Deskripsi</label><textarea
                                 id="description" class="form-input form-textarea"
                                 placeholder="Masukkan deskripsi (opsional)" rows="3"></textarea></div>
-                        <div class="form-group"><label class="form-label" for="recipient">Kirim ke (JID
-                                Pengguna)</label><input type="text" id="recipient" class="form-input"
-                                placeholder="contoh@jabb.im" required></div>
+
+                        <div class="form-group">
+                            <label class="form-label" for="alarm-file">Ganti Suara Alarm (Opsional)</label>
+                            <input type="file" id="alarm-file" class="form-input" accept="audio/*">
+                        </div>
+
+
                         <button type="submit" class="btn btn-primary btn-full">Tambah Pengingat</button>
                     </form>
                 </div>
@@ -437,11 +527,13 @@ session_start();
     </div>
 
     <script>
+    // --- BLOK JAVASCRIPT YANG BENAR UNTUK STRUKTUR 3 FILE ---
     class CalendarApp {
         constructor() {
             this.currentMonth = new Date();
             this.selectedDate = new Date();
             this.reminders = [];
+            this.playedAlarms = new Set();
             this.monthNames = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus',
                 'September', 'Oktober', 'November', 'Desember'
             ];
@@ -449,12 +541,15 @@ session_start();
         }
 
         async init() {
+            this.alarmSound = document.getElementById('alarm-sound');
+            this.alarmModal = document.getElementById('alarm-modal');
+            this.alarmText = document.getElementById('alarm-text');
+            this.stopAlarmBtn = document.getElementById('stop-alarm-btn');
+
             this.initTheme();
             this.bindEvents();
             await this.loadReminders();
-            this.updateCalendar();
-            this.updateSelectedDate();
-            this.updateReminderList();
+            this.startAlarmChecker();
         }
 
         initTheme() {
@@ -482,6 +577,18 @@ session_start();
             document.getElementById('prevMonth').addEventListener('click', () => this.prevMonth());
             document.getElementById('nextMonth').addEventListener('click', () => this.nextMonth());
             document.getElementById('reminderForm').addEventListener('submit', (e) => this.handleFormSubmit(e));
+            document.getElementById('alarm-file').addEventListener('change', (e) => this.handleAlarmFileChange(e));
+            // Tambahkan event listener untuk tombol stop
+            this.stopAlarmBtn.addEventListener('click', () => this.stopAlarm());
+        }
+
+        handleAlarmFileChange(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const fileURL = URL.createObjectURL(file);
+                this.alarmSound.src = fileURL;
+                alert(`Suara alarm diganti menjadi: ${file.name}`);
+            }
         }
 
         prevMonth() {
@@ -515,9 +622,12 @@ session_start();
                 dayElement.className = 'calendar-day';
                 dayElement.textContent = day;
                 const date = new Date(this.currentMonth.getFullYear(), this.currentMonth.getMonth(), day);
-                if (this.reminders.some(r => this.isSameDate(new Date(r.date), date))) {
+
+                const dayString = this.formatDateForInput(date);
+                if (this.reminders.some(r => r.date.startsWith(dayString))) {
                     dayElement.appendChild(document.createElement('div')).className = 'reminder-dot';
                 }
+
                 if (this.isSameDate(date, this.selectedDate)) {
                     dayElement.classList.add('selected');
                 }
@@ -538,7 +648,10 @@ session_start();
         }
 
         formatDateForInput(date) {
-            return date.toISOString().split('T')[0];
+            const year = date.getFullYear();
+            const month = (date.getMonth() + 1).toString().padStart(2, '0');
+            const day = date.getDate().toString().padStart(2, '0');
+            return `${year}-${month}-${day}`;
         }
 
         isSameDate(d1, d2) {
@@ -546,52 +659,103 @@ session_start();
                 .getDate();
         }
 
+        startAlarmChecker() {
+            setInterval(() => {
+                const now = new Date();
+                this.reminders.forEach(reminder => {
+                    const reminderTime = new Date(reminder.date.replace(' ', 'T'));
+                    if (reminderTime.getFullYear() === now.getFullYear() &&
+                        reminderTime.getMonth() === now.getMonth() &&
+                        reminderTime.getDate() === now.getDate() &&
+                        reminderTime.getHours() === now.getHours() &&
+                        reminderTime.getMinutes() === now.getMinutes() &&
+                        !this.playedAlarms.has(reminder.id)) {
+
+                        this.playAlarm(reminder);
+                    }
+                });
+            }, 10000); // Periksa setiap 10 detik
+        }
+
+        playAlarm(reminder) {
+            this.alarmText.textContent = reminder.title;
+            this.alarmModal.style.display = 'flex'; // Tampilkan modal
+            this.alarmSound.play().catch(e => console.error("Gagal memutar suara:", e));
+            this.playedAlarms.add(reminder.id);
+        }
+
+        stopAlarm() {
+            this.alarmSound.pause(); // Hentikan suara
+            this.alarmSound.currentTime = 0; // Reset waktu audio ke awal
+            this.alarmModal.style.display = 'none'; // Sembunyikan modal
+        }
+
+        async handleRequest(url, options) {
+            try {
+                const response = await fetch(url, options);
+                const responseText = await response.text();
+
+                if (!response.ok) {
+                    console.error("Server Error Response:", responseText);
+                    alert(`Error: ${response.status} ${response.statusText}. Periksa konsol untuk detail.`);
+                    return null;
+                }
+
+                try {
+                    return JSON.parse(responseText);
+                } catch (e) {
+                    console.error("Gagal mem-parsing JSON. Respons mentah dari server:", responseText);
+                    alert("Terjadi kesalahan pada server. Respons tidak valid.");
+                    return null;
+                }
+            } catch (error) {
+                console.error('Kesalahan Jaringan:', error);
+                alert('Terjadi kesalahan saat menghubungi server. Periksa koneksi Anda.');
+                return null;
+            }
+        }
+
         async handleFormSubmit(e) {
             e.preventDefault();
             const title = document.getElementById('title').value.trim();
-            const recipient = document.getElementById('recipient').value.trim();
-            const time = document.getElementById('time').value;
+            const dateValue = document.getElementById('date').value;
+            const timeValue = document.getElementById('time').value;
 
-            if (!title || !recipient) {
-                alert('Judul dan JID Penerima tidak boleh kosong!');
+            if (!title) {
+                alert('Judul tidak boleh kosong!');
                 return;
             }
 
-            const [hours, minutes] = time.split(':');
-            const reminderDate = new Date(this.selectedDate);
-            reminderDate.setHours(hours, minutes, 0, 0);
+            const dateTimeString = `${dateValue} ${timeValue}:00`;
 
             const postData = new FormData();
             postData.append('title', title);
             postData.append('description', document.getElementById('description').value.trim());
-            postData.append('date', reminderDate.toISOString());
-            postData.append('recipient', recipient);
+            postData.append('date', dateTimeString);
 
-            try {
-                // PENTING: JavaScript memanggil file 'api.php' untuk memproses data
-                const response = await fetch('api.php?action=add_reminder', {
-                    method: 'POST',
-                    body: postData
-                });
-                const result = await response.json();
+            const result = await this.handleRequest('api.php?action=add_reminder', {
+                method: 'POST',
+                body: postData
+            });
+
+            if (result) {
                 if (result.success) {
                     alert(result.message);
                     await this.loadReminders();
                     document.getElementById('reminderForm').reset();
                     document.getElementById('time').value = '12:00';
                 } else {
-                    alert('Gagal: ' + result.message);
+                    alert('Gagal dari server: ' + result.message);
                 }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Terjadi kesalahan saat menghubungi server.');
             }
         }
 
         updateReminderList() {
             const reminderList = document.getElementById('reminderList');
+            const selectedDateString = this.formatDateForInput(this.selectedDate);
+
             const filtered = this.reminders
-                .filter(r => this.isSameDate(new Date(r.date), this.selectedDate))
+                .filter(r => r.date.startsWith(selectedDateString))
                 .sort((a, b) => new Date(a.date) - new Date(b.date));
 
             if (filtered.length === 0) {
@@ -617,43 +781,46 @@ session_start();
         }
 
         async deleteReminder(id) {
+            // Hapus juga dari daftar alarm yang sudah berbunyi jika ada
+            if (this.playedAlarms.has(id)) {
+                this.playedAlarms.delete(id);
+            }
+
             if (!confirm('Apakah Anda yakin ingin menghapus pengingat ini?')) return;
 
-            try {
-                const postData = new FormData();
-                postData.append('id', id);
-                // PENTING: JavaScript memanggil file 'api.php'
-                const response = await fetch('api.php?action=delete_reminder', {
-                    method: 'POST',
-                    body: postData
-                });
-                const result = await response.json();
+            const postData = new FormData();
+            postData.append('id', id);
+
+            const result = await this.handleRequest('api.php?action=delete_reminder', {
+                method: 'POST',
+                body: postData
+            });
+
+            if (result) {
                 if (result.success) {
                     await this.loadReminders();
                 } else {
                     alert('Gagal menghapus: ' + result.message);
                 }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Terjadi kesalahan saat menghubungi server.');
             }
         }
 
         async loadReminders() {
-            try {
-                // PENTING: JavaScript memanggil file 'api.php'
-                const response = await fetch('api.php?action=get_reminders');
-                this.reminders = await response.json();
-                this.updateCalendar();
-                this.updateReminderList();
-            } catch (error) {
-                console.error('Gagal memuat pengingat:', error);
+            const remindersData = await this.handleRequest('api.php?action=get_reminders');
+            if (remindersData) {
+                this.reminders = remindersData.error ? [] : remindersData;
+                this.playedAlarms.clear();
+            } else {
                 this.reminders = [];
             }
+            this.updateCalendar();
+            this.updateSelectedDate();
+            this.updateReminderList();
         }
 
         formatTime(dateStr) {
-            return new Date(dateStr).toLocaleTimeString('id-ID', {
+            const parsableDateStr = dateStr.replace(' ', 'T');
+            return new Date(parsableDateStr).toLocaleTimeString('id-ID', {
                 hour: '2-digit',
                 minute: '2-digit',
                 hour12: false
